@@ -2,22 +2,9 @@ import streamlit as st
 import pandas as pd
 import math
 import io
-import base64  # <-- Add this import
 
 # --- Page Configuration ---
 st.set_page_config(page_title="Silicone Calculator", page_icon="🪟", layout="wide")
-
-
-# --- Helper function to display PDF ---
-def show_pdf(file):
-    """Embeds a PDF file in the Streamlit app."""
-    try:
-        base64_pdf = base64.b64encode(file.read()).decode("utf-8")
-        pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="800" type="application/pdf" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>'
-        st.markdown(pdf_display, unsafe_allow_html=True)
-    except Exception as e:
-        st.error(f"Error displaying PDF: {e}")
-
 
 # --- Helper Functions for Manual Input ---
 
@@ -25,30 +12,16 @@ def show_pdf(file):
 def initialize_state():
     """Initializes session state for window list if it doesn't exist."""
     if "windows" not in st.session_state:
-        # Each window is a dictionary with a unique id
-        st.session_state.windows = [
-            {"id": 0, "width": 1.2, "height": 1.5, "quantity": 10}
-        ]
-    if "next_id" not in st.session_state:
-        st.session_state.next_id = 1
+        # Initialize with a DataFrame for st.data_editor
+        st.session_state.windows = pd.DataFrame(
+            [{"Width": 1.2, "Height": 1.5, "Quantity": 10}]
+        )
+    # 'next_id' is no longer needed
 
 
-def add_window_type():
-    """Adds a new, blank window type to the session state."""
-    new_id = st.session_state.next_id
-    st.session_state.windows.append(
-        {"id": new_id, "width": 1.0, "height": 1.0, "quantity": 1}
-    )
-    st.session_state.next_id += 1
-
-
-def remove_window_type(window_id):
-    """Removes a window type from the session state by its ID."""
-    st.session_state.windows = [
-        w for w in st.session_state.windows if w["id"] != window_id
-    ]
-    # Note: We don't need to re-index, the ID just needs to be unique
-
+# --- The add_window_type and remove_window_type functions are no longer needed ---
+# def add_window_type(): ... (REMOVE)
+# def remove_window_type(window_id): ... (REMOVE)
 
 # --- Initialize State ---
 initialize_state()
@@ -97,71 +70,43 @@ project_df = None
 if input_method == "Manually (for smaller projects)":
     st.subheader("Manual Window Entry")
 
-    # Create a container for manual entry
-    with st.container():
-        # Display headers
-        col_header_1, col_header_2, col_header_3, col_header_4 = st.columns(
-            [2, 2, 1, 1]
-        )
-        col_header_1.markdown("**Width (meters)**")
-        col_header_2.markdown("**Height (meters)**")
-        col_header_3.markdown("**Quantity**")
+    # --- Use st.data_editor for mobile-friendly input ---
+    st.markdown("Add, edit, or remove window types directly in the table below.")
 
-        # List all window types from session state
-        all_windows_data = []
-        for i, window in enumerate(st.session_state.windows):
-            col1, col2, col3, col4 = st.columns([2, 2, 1, 1])
-
-            # Use unique keys for each widget
-            key_prefix = f"window_{window['id']}"
-
-            width = col1.number_input(
-                "Width",
-                value=window["width"],
+    edited_df = st.data_editor(
+        st.session_state.windows,
+        num_rows="dynamic",  # Allows adding/deleting rows
+        use_container_width=True,
+        column_config={
+            "Width": st.column_config.NumberColumn(
+                "Width (meters)",
                 min_value=0.1,
                 step=0.1,
-                key=f"{key_prefix}_w",
-                label_visibility="collapsed",
-            )
-            height = col2.number_input(
-                "Height",
-                value=window["height"],
+                format="%.2f",
+                required=True,
+            ),
+            "Height": st.column_config.NumberColumn(
+                "Height (meters)",
                 min_value=0.1,
                 step=0.1,
-                key=f"{key_prefix}_h",
-                label_visibility="collapsed",
-            )
-            quantity = col3.number_input(
-                "Qty",
-                value=window["quantity"],
+                format="%.2f",
+                required=True,
+            ),
+            "Quantity": st.column_config.NumberColumn(
+                "Quantity",
                 min_value=1,
                 step=1,
-                key=f"{key_prefix}_q",
-                label_visibility="collapsed",
-            )
+                format="%d",
+                required=True,
+            ),
+        },
+    )
 
-            col4.button(
-                "Remove",
-                key=f"{key_prefix}_rem",
-                on_click=remove_window_type,
-                args=(window["id"],),
-                use_container_width=True,
-            )
+    # Update session state with the edited data
+    st.session_state.windows = edited_df
 
-            # Store data to build the DataFrame
-            all_windows_data.append(
-                {"Width": width, "Height": height, "Quantity": quantity}
-            )
-
-        st.button(
-            "Add Another Window Type",
-            on_click=add_window_type,
-            use_container_width=True,
-        )
-
-        # Create DataFrame from manual input
-        if all_windows_data:
-            project_df = pd.DataFrame(all_windows_data)
+    # Set project_df for calculation
+    project_df = edited_df.copy()  # <-- Add .copy() here
 
 else:
     # --- File Upload Method ---
@@ -204,7 +149,7 @@ else:
             # --- Validate Uploaded DataFrame ---
             if all(col in df.columns for col in ["Width", "Height", "Quantity"]):
                 st.success("File uploaded and read successfully!")
-                project_df = df
+                project_df = df.copy()  # <-- And Add .copy() here
             else:
                 st.error(
                     "Error: Your file is missing one of the required columns: 'Width', 'Height', 'Quantity'."
