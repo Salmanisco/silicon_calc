@@ -123,17 +123,8 @@ def generate_pdf_report(
     
     class PDF(FPDF):
         def header(self):
-            # Logo
-            try:
-                # Place logo at top-left: x=10, y=8, width=33
-                self.image("logo.jpg", 10, 8, 33)
-            except Exception:
-                pass # Skip if logo not found
-            
             self.set_font('helvetica', 'B', 16)
-            # Move to the right to center the title
-            self.cell(80) 
-            self.cell(30, 10, 'Procurement Requirement Report', border=False, align='C')
+            self.cell(0, 10, 'Procurement Requirement Report', border=False, align='C')
             self.ln(20)
 
         def footer(self):
