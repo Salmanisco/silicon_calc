@@ -6,24 +6,26 @@ from typing import Tuple
 
 # --- Helper Functions ---
 
-def calculate_silicone_needs(
-    df: pd.DataFrame, meters_per_can: float, waste_factor_percent: float
-) -> Tuple[pd.DataFrame, float, float, float, int]:
+def calculate_project_materials(
+    df: pd.DataFrame, 
+    ext_width_mm: float, ext_depth_mm: float, ext_can_vol_ml: float,
+    int_width_mm: float, int_depth_mm: float, int_can_vol_ml: float,
+    screw_spacing_cm: float,
+    waste_factor_percent: float
+) -> Tuple[pd.DataFrame, float, float, float, int, int, int, float]:
     """
-    Calculates the silicone needs for a project.
-
-    Args:
-        df: DataFrame containing 'Width', 'Height', and 'Quantity'.
-        meters_per_can: Meters of silicone provided by one can.
-        waste_factor_percent: Percentage of waste to add (0-100).
+    Calculates the silicone and hardware needs for a project.
 
     Returns:
         A tuple containing:
-        - The modified DataFrame with calculation columns.
-        - Total project perimeter (float).
-        - Total silicone length needed (float).
-        - Total silicone length with waste (float).
-        - Total cans to buy (int).
+        - The modified DataFrame.
+        - Total project perimeter (meters).
+        - Exterior Silicone Length (meters).
+        - Interior Silicone Length (meters).
+        - Exterior Cans Needed (int).
+        - Interior Cans Needed (int).
+        - Total Screws Needed (int).
+        - Total Rubber Length (meters).
     """
     # Ensure correct data types
     df = df.copy()
@@ -39,23 +41,50 @@ def calculate_silicone_needs(
 
     # 3. Sum for the whole project
     total_project_perimeter = df["Perimeter_Total_Type"].sum()
+    
+    # 4. Apply Waste Factor Multiplier
+    waste_multiplier = (1 + waste_factor_percent / 100)
 
-    # 4. Double it (for both sides)
-    total_silicone_length = total_project_perimeter * 2
+    # --- Exterior Calculation ---
+    total_ext_length = total_project_perimeter * waste_multiplier
+    
+    ext_vol_per_meter_ml = ext_width_mm * ext_depth_mm
+    if ext_vol_per_meter_ml > 0:
+        ext_meters_per_can = ext_can_vol_ml / ext_vol_per_meter_ml
+        ext_cans = math.ceil(total_ext_length / ext_meters_per_can)
+    else:
+        ext_cans = 0
 
-    # 5. Apply waste factor
-    total_silicone_with_waste = total_silicone_length * (1 + waste_factor_percent / 100)
-
-    # 6. Calculate cans needed (and round up)
-    cans_needed_float = total_silicone_with_waste / meters_per_can
-    total_cans_to_buy = math.ceil(cans_needed_float)
+    # --- Interior Calculation ---
+    total_int_length = total_project_perimeter * waste_multiplier
+    
+    int_vol_per_meter_ml = int_width_mm * int_depth_mm
+    if int_vol_per_meter_ml > 0:
+        int_meters_per_can = int_can_vol_ml / int_vol_per_meter_ml
+        int_cans = math.ceil(total_int_length / int_meters_per_can)
+    else:
+        int_cans = 0
+        
+    # --- Screw Calculation ---
+    if screw_spacing_cm > 0:
+        spacing_m = screw_spacing_cm / 100.0
+        total_screws = math.ceil(total_project_perimeter / spacing_m)
+    else:
+        total_screws = 0
+        
+    # --- Rubber Calculation ---
+    # Perimeter * 3 * Waste Factor
+    total_rubber_length = total_project_perimeter * 3 * waste_multiplier
 
     return (
         df,
         total_project_perimeter,
-        total_silicone_length,
-        total_silicone_with_waste,
-        total_cans_to_buy,
+        total_ext_length,
+        total_int_length,
+        ext_cans,
+        int_cans,
+        total_screws,
+        total_rubber_length
     )
 
 def initialize_state():
@@ -82,24 +111,23 @@ def get_template_csv() -> str:
 # --- Main App ---
 
 def main():
-    st.set_page_config(page_title="Silicone Calculator", page_icon="🪟", layout="wide")
+    st.set_page_config(page_title="Silicone & Hardware Calculator", page_icon="🪟", layout="wide")
     initialize_state()
 
-    st.title("🪟 Silicone Can Calculator for Fabricators")
+    st.title("🪟 Silicone & Hardware Calculator")
     st.markdown(
-        "Calculate the total silicone cans needed for your window installation project. "
-        "This tool accounts for applying silicone to **both sides** of the window perimeter."
+        "Calculate silicone cans and screws needed for window installation. "
+        "Separated by **Inside** and **Outside** for silicone."
     )
 
     # --- Sidebar: Global Settings ---
     st.sidebar.header("Project Settings")
-    meters_per_can = st.sidebar.number_input(
-        "Meters of Silicone per Can",
-        min_value=1.0,
-        value=12.0,
-        step=0.5,
-        help="Check your silicone can's label or estimate based on your typical bead size.",
-    )
+    
+    with st.sidebar.expander("🔩 Hardware / Screws", expanded=True):
+        screw_spacing = st.number_input(
+             "Screw Spacing (cm)", min_value=10.0, value=40.0, step=5.0, 
+             help="Distance between fastening screws along the perimeter."
+        )
 
     waste_factor = st.sidebar.slider(
         "Waste Factor (%)",
@@ -108,6 +136,48 @@ def main():
         value=10,
         help="Add a percentage to account for waste, tube changes, and over-application.",
     )
+    
+    st.sidebar.divider()
+    
+    # --- EXTERIOR TAB ---
+    with st.sidebar.expander("🧱 Exterior / Outside", expanded=True):
+        st.markdown("**Exterior Joint Dimensions**")
+        ext_width = st.number_input(
+            "Ext. Gap Width (mm)", min_value=1.0, value=5.0, step=0.5, key="ext_w"
+        )
+        ext_depth = st.number_input(
+            "Ext. Gap Depth (mm)", min_value=1.0, value=5.0, step=0.5, key="ext_d"
+        )
+        
+        st.markdown("**Exterior Can**")
+        ext_can_vol = st.number_input(
+            "Ext. Can Volume (ml)", min_value=100.0, value=600.0, step=10.0, key="ext_vol", help="e.g. 600ml sausage"
+        )
+        
+        # Yield Check
+        if ext_width > 0 and ext_depth > 0:
+             yield_m = ext_can_vol / (ext_width * ext_depth)
+             st.caption(f"Est. Yield: {yield_m:.1f} m/can")
+
+    # --- INTERIOR TAB ---
+    with st.sidebar.expander("🏠 Interior / Inside", expanded=True):
+        st.markdown("**Interior Joint Dimensions**")
+        int_width = st.number_input(
+            "Int. Gap Width (mm)", min_value=1.0, value=5.0, step=0.5, key="int_w"
+        )
+        int_depth = st.number_input(
+            "Int. Gap Depth (mm)", min_value=1.0, value=5.0, step=0.5, key="int_d"
+        )
+        
+        st.markdown("**Interior Can**")
+        int_can_vol = st.number_input(
+            "Int. Can Volume (ml)", min_value=100.0, value=310.0, step=10.0, key="int_vol", help="e.g. 310ml cartridge"
+        )
+
+        # Yield Check
+        if int_width > 0 and int_depth > 0:
+             yield_m = int_can_vol / (int_width * int_depth)
+             st.caption(f"Est. Yield: {yield_m:.1f} m/can")
 
     st.sidebar.divider()
     st.sidebar.info(
@@ -189,28 +259,49 @@ def main():
             (
                 result_df,
                 total_project_perimeter,
-                total_silicone_length,
-                total_silicone_with_waste,
-                total_cans_to_buy,
-            ) = calculate_silicone_needs(project_df, meters_per_can, waste_factor)
+                total_ext_length,
+                total_int_length,
+                ext_cans,
+                int_cans,
+                total_screws,
+                total_rubber_length
+            ) = calculate_project_materials(
+                project_df, 
+                ext_width, ext_depth, ext_can_vol,
+                int_width, int_depth, int_can_vol,
+                screw_spacing,
+                waste_factor
+            )
 
             st.subheader("Project Totals")
-            res_col1, res_col2, res_col3 = st.columns(3)
-            res_col1.metric("Total Window Perimeter", f"{total_project_perimeter:.1f} m")
-            res_col2.metric(
-                "Total Silicone Length (Both Sides)", f"{total_silicone_length:.1f} m"
-            )
-            res_col3.metric(
-                f"Total Length (with {waste_factor}% waste)",
-                f"{total_silicone_with_waste:.1f} m",
-            )
+            
+            # Create 4 columns for layout (Perimeter, Ext, Int, Hardware)
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric("Total Project Perimeter", f"{total_project_perimeter:.1f} m")
+                st.caption("Base length of all windows")
+            
+            with col2:
+                st.info("🧱 Exterior Needs")
+                st.metric("Total Length (w/ Waste)", f"{total_ext_length:.1f} m")
+                st.success(f"**{ext_cans} Cans**")
+                st.caption(f"Based on {ext_can_vol:.0f}ml can & {ext_width}x{ext_depth}mm gap")
+
+            with col3:
+                st.info("🏠 Interior Needs")
+                st.metric("Total Length (w/ Waste)", f"{total_int_length:.1f} m")
+                st.success(f"**{int_cans} Cans**")
+                st.caption(f"Based on {int_can_vol:.0f}ml can & {int_width}x{int_depth}mm gap")
+                
+            with col4:
+                st.warning("🔩 Hardware & Rubber")
+                st.metric("Total Screws Needed", f"{total_screws}", help=f"1 screw every {screw_spacing} cm along the perimeter.")
+                st.metric("Total Rubber Needed", f"{total_rubber_length:.1f} m", help="Perimeter × 3 (plus waste)")
+                st.caption(f"Includes {waste_factor}% waste")
 
             st.divider()
-            st.success(f"**Total Cans to Purchase: {total_cans_to_buy}**")
-            st.caption(
-                f"Calculation: {total_silicone_with_waste:.1f} meters needed / {meters_per_can} meters per can. Rounded up."
-            )
-
+            
             st.subheader("Project Data Summary")
             st.dataframe(
                 result_df.style.format(
