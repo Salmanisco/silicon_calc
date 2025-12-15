@@ -108,6 +108,116 @@ def get_template_csv() -> str:
     template_df.to_csv(buffer, index=False)
     return buffer.getvalue()
 
+from datetime import datetime
+from fpdf import FPDF
+
+def generate_pdf_report(
+    project_id: str,
+    total_perimeter: float,
+    ext_data: dict,
+    int_data: dict,
+    hardware_data: dict,
+    df: pd.DataFrame
+) -> bytes:
+    """Generates a PDF report for the project."""
+    
+    class PDF(FPDF):
+        def header(self):
+            # Logo
+            try:
+                # Place logo at top-left: x=10, y=8, width=33
+                self.image("logo.jpg", 10, 8, 33)
+            except Exception:
+                pass # Skip if logo not found
+            
+            self.set_font('helvetica', 'B', 16)
+            # Move to the right to center the title
+            self.cell(80) 
+            self.cell(30, 10, 'Procurement Requirement Report', border=False, align='C')
+            self.ln(20)
+
+        def footer(self):
+            self.set_y(-15)
+            self.set_font('helvetica', 'I', 8)
+            self.cell(0, 10, f'Page {self.page_no()}/{{nb}}', align='C')
+
+    pdf = PDF()
+    pdf.add_page()
+    pdf.set_font('helvetica', '', 12)
+    
+    # --- Project Info ---
+    pdf.set_font('helvetica', 'B', 12)
+    pdf.cell(40, 10, 'Project ID:', border=False)
+    pdf.set_font('helvetica', '', 12)
+    pdf.cell(0, 10, project_id if project_id else "Untitled Project", border=False, new_x="LMARGIN", new_y="NEXT")
+    
+    pdf.set_font('helvetica', 'B', 12)
+    pdf.cell(40, 10, 'Date:', border=False)
+    pdf.set_font('helvetica', '', 12)
+    pdf.cell(0, 10, datetime.now().strftime("%Y-%m-%d %H:%M"), border=False, new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(10)
+    
+    # --- Summary Section ---
+    pdf.set_font('helvetica', 'B', 14)
+    pdf.cell(0, 10, 'Material Summary', border="B", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(5)
+    
+    pdf.set_font('helvetica', '', 12)
+    
+    # Total Perimeter
+    pdf.cell(60, 10, 'Total Window Perimeter:', border=False)
+    pdf.cell(0, 10, f"{total_perimeter:.1f} m", border=False, new_x="LMARGIN", new_y="NEXT")
+    
+    # Exterior
+    pdf.ln(5)
+    pdf.set_font('helvetica', 'B', 12)
+    pdf.cell(0, 10, 'Exterior Silicone (Outside)', border=False, new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font('helvetica', '', 12)
+    pdf.cell(10) # Indent
+    pdf.cell(50, 10, f"- Cans Needed:", border=False)
+    pdf.set_font('helvetica', 'B', 12)
+    pdf.cell(0, 10, f"{ext_data['cans']} Cans ({ext_data['vol']}ml)", border=False, new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font('helvetica', '', 12)
+    pdf.cell(10)
+    pdf.cell(50, 10, f"- Joint Size:", border=False)
+    pdf.cell(0, 10, f"{ext_data['width']}mm x {ext_data['depth']}mm", border=False, new_x="LMARGIN", new_y="NEXT")
+
+    # Interior
+    pdf.ln(5)
+    pdf.set_font('helvetica', 'B', 12)
+    pdf.cell(0, 10, 'Interior Silicone (Inside)', border=False, new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font('helvetica', '', 12)
+    pdf.cell(10) # Indent
+    pdf.cell(50, 10, f"- Cans Needed:", border=False)
+    pdf.set_font('helvetica', 'B', 12)
+    pdf.cell(0, 10, f"{int_data['cans']} Cans ({int_data['vol']}ml)", border=False, new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font('helvetica', '', 12)
+    pdf.cell(10)
+    pdf.cell(50, 10, f"- Joint Size:", border=False)
+    pdf.cell(0, 10, f"{int_data['width']}mm x {int_data['depth']}mm", border=False, new_x="LMARGIN", new_y="NEXT")
+    
+    # Hardware
+    pdf.ln(5)
+    pdf.set_font('helvetica', 'B', 12)
+    pdf.cell(0, 10, 'Hardware & Rubber', border=False, new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font('helvetica', '', 12)
+    pdf.cell(10) # Indent
+    pdf.cell(50, 10, f"- Screws Needed:", border=False)
+    pdf.set_font('helvetica', 'B', 12)
+    pdf.cell(0, 10, f"{hardware_data['screws']} pcs", border=False, new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font('helvetica', '', 12)
+    pdf.cell(10) 
+    pdf.cell(50, 10, f"- Rubber Gasket:", border=False)
+    pdf.set_font('helvetica', 'B', 12)
+    pdf.cell(0, 10, f"{hardware_data['rubber']:.1f} m", border=False, new_x="LMARGIN", new_y="NEXT")
+
+    pdf.ln(10)
+    pdf.set_font('helvetica', 'I', 10)
+    waste_txt = f"Note: Calculations include a {hardware_data['waste']}% waste factor."
+    pdf.multi_cell(0, 10, waste_txt)
+    
+    return bytes(pdf.output())
+
 # --- Main App ---
 
 def main():
@@ -186,6 +296,10 @@ def main():
 
     # --- Input Method Selection ---
     st.header("1. Input Window Data")
+    
+    # Project ID Input
+    project_id = st.text_input("Project ID / Name", placeholder="e.g. Tower A - Floor 12")
+    
     input_method = st.radio(
         "Choose your input method:",
         ("Manually (for smaller projects)", "Upload a File (for massive projects)"),
@@ -299,6 +413,24 @@ def main():
                 st.metric("Total Screws Needed", f"{total_screws}", help=f"1 screw every {screw_spacing} cm along the perimeter.")
                 st.metric("Total Rubber Needed", f"{total_rubber_length:.1f} m", help="Perimeter × 3 (plus waste)")
                 st.caption(f"Includes {waste_factor}% waste")
+            
+            # --- PDF Export Button ---
+            pdf_bytes = generate_pdf_report(
+                project_id,
+                total_project_perimeter,
+                ext_data={"cans": ext_cans, "vol": ext_can_vol, "width": ext_width, "depth": ext_depth},
+                int_data={"cans": int_cans, "vol": int_can_vol, "width": int_width, "depth": int_depth},
+                hardware_data={"screws": total_screws, "rubber": total_rubber_length, "waste": waste_factor},
+                df=result_df
+            )
+            
+            st.divider()
+            st.download_button(
+                label="📄 Download Procurement Report (PDF)",
+                data=pdf_bytes,
+                file_name=f"procurement_report_{project_id.replace(' ', '_') if project_id else 'project'}.pdf",
+                mime="application/pdf"
+            )
 
             st.divider()
             
@@ -317,6 +449,8 @@ def main():
 
         except Exception as e:
             st.error(f"An error occurred during calculation. Details: {e}")
+            import traceback
+            st.text(traceback.format_exc()) # Helping debug if pdf fails
     else:
         st.info("Add window types or upload a file to see the results.")
 
