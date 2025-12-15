@@ -307,7 +307,7 @@ def main():
         edited_df = st.data_editor(
             st.session_state.windows,
             num_rows="dynamic",
-            use_container_width=True,
+            width="stretch",
             column_config={
                 "Width": st.column_config.NumberColumn(
                     "Width (meters)", min_value=0.1, step=0.1, format="%.2f", required=True
